@@ -1,13 +1,11 @@
-require("dotenv").config();
+require( "dotenv" ).config();
 const { v4: uuidv4 } = require("uuid");
 const AccessToken = require("twilio").jwt.AccessToken;
 const VideoGrant = AccessToken.VideoGrant;
 const express = require("express");
 const app = express();
 const port = 5000;
-const cors = require('cors')
 
-app.use(cors())
 // use the Express JSON middleware
 app.use(express.json());
 
@@ -29,16 +27,20 @@ const findOrCreateRoom = async (roomName) => {
         // see if the room exists already. If it doesn't, this will throw
         // error 20404.
         await twilioClient.video.rooms(roomName).fetch();
+        console.log(`joined the room #1`);
     } catch (error) {
         // the room was not found, so create it
         if (error.code == 20404) {
             await twilioClient.video.rooms.create({
                 uniqueName: roomName,
-                type: "go",
+                type: "group",
             });
+            console.log(`joined the room #2`);
         } else {
+            console.log(`error code ${error.code}`);
             // let other errors bubble up
-            throw error;
+            // throw error;
+            findOrCreateRoom(roomName);
         }
     }
 };

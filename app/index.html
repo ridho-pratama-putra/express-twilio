@@ -2,31 +2,79 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title><!DOCTYPE html>
-        <html>
-        <head>
-        <meta charset="utf-8" />
-        <title>Twilio Video Demo</title>
+    <title>Twilio Video Demo</title>
     <!-- Twilio Video CDN -->
     <script src="https://sdk.twilio.com/js/video/releases/2.15.2/twilio-video.min.js"></script>
     <script src="https://code.jquery.com/jquery-1.9.1.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/RecordRTC/5.6.2/RecordRTC.js"></script>
 
     <script type="application/javascript">
+        let voiceStream;
+        let desktopStream;
+        let stream;
+        let rec;
+        let blobs;
+        let blob;
         $(document).ready(function () {
             const form = document.getElementById("room-name-form");
-            const joinForm = document.getElementById("join-room-form");
+            const stopRecordForm = document.getElementById("stop-form");
             const roomNameInput = document.getElementById("room-name-input");
-            const tokenRoom = document.getElementById("room-token-input");
+            const participantNameInput = document.getElementById("participant-name-input");
             const container = document.getElementById("video-container");
-            console.log('ready to go')
+            let room;
+
+            const startInitializeCamera = async () => {
+                console.log('rrom ', room)
+
+                let participantMediaStream = room.participants.map(participant => participant.get().getAudioTracks());
+                console.log(participantMediaStream)
+
+                desktopStream = await navigator.mediaDevices.getDisplayMedia({ video:true, audio: true });
+                voiceStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: {
+                        noiseSuppression: false,
+                    }
+                });
+
+                const tracks = [
+                    ...desktopStream.getVideoTracks(),
+                    ...mergeAudioStreams(desktopStream, voiceStream)
+                ];
+
+                stream = new MediaStream(tracks);
+
+                rec = new MediaRecorder(stream, {mimeType: 'video/webm; codecs=vp8,opus'});
+                blobs = [];
+                rec.ondataavailable = (e) => blobs.push(e.data);
+                rec.onstop = async () => {
+                    console.log('called onstop')
+                    blob = new Blob(blobs, {type: 'video/webm'});
+                    let filename = window.prompt('Enter file name'),
+                    downloadLink = document.createElement('a');
+                    downloadLink.href = URL.createObjectURL(blob);
+                    downloadLink.download = `${filename}.webm`;
+
+                    document.body.appendChild(downloadLink);
+                    downloadLink.click();
+                    URL.revokeObjectURL(blob); // clear from memory
+                    document.body.removeChild(downloadLink);
+                };
+                rec.start();
+            }
+
             const startRoom = async (event) => {
                 console.log('start room')
                 // prevent a page reload when a user submits the form
                 event.preventDefault();
-                // hide the join form
-                form.style.visibility = "hidden";
+
                 // retrieve the room name
                 const roomName = roomNameInput.value;
+                const participantName = participantNameInput.value;
+
+                // hide the join form
+                form.style.visibility = "hidden";
+                if (participantName !== "C") {
+                    stopRecordForm.style.visibility = "visible";
+                }
 
                 // fetch an Access Token from the join-room route
                 const response = await fetch("/join-room", {
@@ -37,7 +85,10 @@
                 const {token} = await response.json();
 
                 // join the video room with the token
-                const room = await joinVideoRoom(roomName, token);
+                room = await joinVideoRoom(roomName, token);
+                if (participantName !== "C") {
+                    startInitializeCamera();
+                }
 
                 // render the local and remote participants' video and audio tracks
                 handleConnectedParticipant(room.localParticipant);
@@ -47,15 +98,23 @@
                 // handle cleanup when a participant disconnects
                 room.on("participantDisconnected", handleDisconnectedParticipant);
                 window.addEventListener("pagehide", () => {
-                    console.log('disconnected');
+                    console.log('disconnected pagehide');
                     room.disconnect();
                 });
                 window.addEventListener("beforeunload", () => {
-                    console.log('disconnected');
+                    console.log('disconnected beforeunload');
                     room.disconnect();
                 });
             };
-            form.addEventListener("submit", startRoom);
+
+            const stopRecord = (event) => {
+                event.preventDefault();
+                room.disconnect();
+                stream.getTracks().forEach(s=>s.stop());
+                rec.stop();
+                console.log(room.localParticipant)
+                handleDisconnectedParticipant(room.localParticipant);
+            }
 
             const handleConnectedParticipant = (participant) => {
                 // create a div for this participant's tracks
@@ -101,20 +160,57 @@
             };
 
             const handleDisconnectedParticipant = (participant) => {
+                console.log(`handleDisconnectedParticipant :: ${participant}`)
                 // stop listening for this participant
                 participant.removeAllListeners();
                 // remove this participant's div from the page
                 const participantDiv = document.getElementById(participant.identity);
                 participantDiv.remove();
             };
+
+            const mergeAudioStreams = (desktopStream, voiceStream) => {
+                const context = new AudioContext();
+                const destination = context.createMediaStreamDestination();
+                let hasDesktop = false;
+                let hasVoice = false;
+                if (desktopStream && desktopStream.getAudioTracks().length > 0) {
+                    // If you don't want to share Audio from the desktop it should still work with just the voice.
+                    const source1 = context.createMediaStreamSource(desktopStream);
+                    const desktopGain = context.createGain();
+                    desktopGain.gain.value = 0.7;
+                    source1.connect(desktopGain).connect(destination);
+                    hasDesktop = true;
+                }
+
+                if (voiceStream && voiceStream.getAudioTracks().length > 0) {
+                    const source2 = context.createMediaStreamSource(voiceStream);
+                    const voiceGain = context.createGain();
+                    voiceGain.gain.value = 0.7;
+                    source2.connect(voiceGain).connect(destination);
+                    hasVoice = true;
+                }
+
+                return (hasDesktop || hasVoice) ? destination.stream.getAudioTracks() : [];
+            };
+
+            stopRecordForm.addEventListener("submit", stopRecord);
+            form.addEventListener("submit", startRoom);
         });
     </script>
 
 </head>
 <body>
 <form id="room-name-form">
-    Enter a Room Name to join: <input name="room_name" id="room-name-input"/>
+    <p>
+        Enter a Room Name to join: <input name="room_name" id="room-name-input" value="hitam"/>
+    </p>
+    <p>
+        your name: <input name="participant_name" id="participant-name-input" value="C"/>
+    </p>
     <button type="submit">Join Room</button>
+</form>
+<form id="stop-form" style="visibility: hidden">
+    <button type="submit">stop record</button>
 </form>
 <div id="video-container"></div>
 </body>
