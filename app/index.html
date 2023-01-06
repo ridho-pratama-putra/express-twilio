@@ -184,6 +184,8 @@
                     // track.attach creates an HTMLVideoElement or HTMLAudioElement
                     // (depending on the type of track) and adds the video or audio stream
                     participantDiv.append(track.attach());
+                    track.on('disabled', () => console.log('on disabled track'));
+                    track.on('enabled', () => console.log('on enabled track'));
                 }
 
                 // check if the trackPublication contains a `track` attribute. If it does,
