@@ -9,44 +9,47 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/RecordRTC/5.6.2/RecordRTC.js"></script>
 
     <script type="application/javascript">
-        let voiceStream;
-        let desktopStream;
-        let stream;
-        let rec;
-        let blobs;
-        let blob;
         $(document).ready(function () {
+            console.log('ready')
             const form = document.getElementById("room-name-form");
             const stopRecordForm = document.getElementById("stop-form");
+            const startRecordForm = document.getElementById("start-form");
             const roomNameInput = document.getElementById("room-name-input");
             const participantNameInput = document.getElementById("participant-name-input");
             const container = document.getElementById("video-container");
-            let room;
 
-            const startInitializeCamera = async () => {
-                console.log('rrom ', room)
+            function mediaStreamFromParticipant() {
+                const id = "#" + participants[0];
+                const parent = $(id)[0];
+                console.log('parent :: ', parent)
+                const audioTag = parent.getElementsByTagName("audio")[0];
+                console.log('audioTag :: ', audioTag)
+                const mediaStream = audioTag.captureStream();
+                return mediaStream;
+            }
 
-                let participantMediaStream = room.participants.map(participant => participant.get().getAudioTracks());
-                console.log(participantMediaStream)
-
-                desktopStream = await navigator.mediaDevices.getDisplayMedia({ video:true, audio: true });
-                voiceStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: {
-                        noiseSuppression: false,
-                    }
+            const initializeAndRecordCamera = async (isInitial) => {
+                console.log('isInitial :: ', isInitial)
+                if (isInitial) {
+                    desktopStream = await navigator.mediaDevices.getDisplayMedia({ video:true, audio: true });
+                    voiceStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true});
+                }
+                participants.pop();
+                room.participants.forEach(participant => {
+                    participants.push(participant.identity);
                 });
 
-                const tracks = [
-                    ...desktopStream.getVideoTracks(),
-                    ...mergeAudioStreams(desktopStream, voiceStream)
-                ];
+                let mediaStream = mediaStreamFromParticipant();
 
-                stream = new MediaStream(tracks);
+                stream = new MediaStream([
+                    ...desktopStream.getVideoTracks(),
+                    ...mergeAudioStreams(desktopStream, voiceStream, mediaStream),
+                ]);
 
                 rec = new MediaRecorder(stream, {mimeType: 'video/webm; codecs=vp8,opus'});
                 blobs = [];
                 rec.ondataavailable = (e) => blobs.push(e.data);
                 rec.onstop = async () => {
-                    console.log('called onstop')
                     blob = new Blob(blobs, {type: 'video/webm'});
                     let filename = window.prompt('Enter file name'),
                     downloadLink = document.createElement('a');
@@ -62,7 +65,6 @@
             }
 
             const startRoom = async (event) => {
-                console.log('start room')
                 // prevent a page reload when a user submits the form
                 event.preventDefault();
 
@@ -74,8 +76,8 @@
                 form.style.visibility = "hidden";
                 if (participantName !== "C") {
                     stopRecordForm.style.visibility = "visible";
+                    startRecordForm.style.visibility = "visible";
                 }
-
                 // fetch an Access Token from the join-room route
                 const response = await fetch("/join-room", {
                     method: "POST", headers: {
@@ -86,9 +88,6 @@
 
                 // join the video room with the token
                 room = await joinVideoRoom(roomName, token);
-                if (participantName !== "C") {
-                    startInitializeCamera();
-                }
 
                 // render the local and remote participants' video and audio tracks
                 handleConnectedParticipant(room.localParticipant);
@@ -98,21 +97,23 @@
                 // handle cleanup when a participant disconnects
                 room.on("participantDisconnected", handleDisconnectedParticipant);
                 window.addEventListener("pagehide", () => {
-                    console.log('disconnected pagehide');
                     room.disconnect();
                 });
                 window.addEventListener("beforeunload", () => {
-                    console.log('disconnected beforeunload');
                     room.disconnect();
                 });
             };
 
-            const stopRecord = (event) => {
+            const handleClickStartRecord = (event) => {
+                event.preventDefault();
+                initializeAndRecordCamera(INITIAL);
+            }
+
+            const handleClickStopRecord = (event) => {
                 event.preventDefault();
                 room.disconnect();
                 stream.getTracks().forEach(s=>s.stop());
                 rec.stop();
-                console.log(room.localParticipant)
                 handleDisconnectedParticipant(room.localParticipant);
             }
 
@@ -127,6 +128,14 @@
                 participant.tracks.forEach((trackPublication) => {
                     handleTrackPublication(trackPublication, participant);
                 });
+
+                ////getting participant audio track but cannot convert to media
+                // room.participants.forEach(participant => {
+                //     room.participants.get(participant.sid).audioTracks.forEach(audioTrack => {
+                //         console.log(audioTrack)
+                //         console.log(Object.keys(audioTrack));
+                //     });
+                // });
 
                 // listen for any new track publications
                 participant.on("trackPublished", handleTrackPublication);
@@ -160,7 +169,6 @@
             };
 
             const handleDisconnectedParticipant = (participant) => {
-                console.log(`handleDisconnectedParticipant :: ${participant}`)
                 // stop listening for this participant
                 participant.removeAllListeners();
                 // remove this participant's div from the page
@@ -168,7 +176,7 @@
                 participantDiv.remove();
             };
 
-            const mergeAudioStreams = (desktopStream, voiceStream) => {
+            const mergeAudioStreams = (desktopStream, voiceStream, participantStream) => {
                 const context = new AudioContext();
                 const destination = context.createMediaStreamDestination();
                 let hasDesktop = false;
@@ -190,12 +198,30 @@
                     hasVoice = true;
                 }
 
+                if (participantStream.getAudioTracks().length > 0) {
+                    const source3 = context.createMediaStreamSource(participantStream);
+                    const voiceGain = context.createGain();
+                    voiceGain.gain.value = 0.7;
+                    source3.connect(voiceGain).connect(destination);
+                }
+
                 return (hasDesktop || hasVoice) ? destination.stream.getAudioTracks() : [];
             };
 
-            stopRecordForm.addEventListener("submit", stopRecord);
+            startRecordForm.addEventListener("submit", handleClickStartRecord);
+            stopRecordForm.addEventListener("submit", handleClickStopRecord);
             form.addEventListener("submit", startRoom);
         });
+        let voiceStream;
+        let desktopStream;
+        let stream;
+        let rec;
+        let blobs;
+        let blob;
+        let room;
+        let participants = new Array();
+        const INITIAL = true;
+        console.log('define')
     </script>
 
 </head>
@@ -210,7 +236,10 @@
     <button type="submit">Join Room</button>
 </form>
 <form id="stop-form" style="visibility: hidden">
-    <button type="submit">stop record</button>
+    <button type="submit">end call</button>
+</form>
+<form id="start-form" style="visibility: hidden">
+    <button type="submit">start record</button>
 </form>
 <div id="video-container"></div>
 </body>
