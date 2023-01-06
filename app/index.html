@@ -17,13 +17,37 @@
             const roomNameInput = document.getElementById("room-name-input");
             const participantNameInput = document.getElementById("participant-name-input");
             const container = document.getElementById("video-container");
+            const mute = document.getElementById("mute");
+            const unmute = document.getElementById("unmute");
+            const enableCamera = document.getElementById("enable-camera");
+            const disableCamera = document.getElementById("disable-camera");
+
+            const handleClickUnMute = () => {
+                room.localParticipant.audioTracks.forEach(track => {
+                    track.track.enabled();
+                });
+            };
+            const handleClickMute = () => {
+                room.localParticipant.audioTracks.forEach(track => {
+                    track.track.disable();
+                });
+            };
+
+            const handleClickEnableCamera = () => {
+                room.localParticipant.videoTracks.forEach(track => {
+                    track.track.enable(true);
+                });
+            };
+            const handleClickDisableCamera = () => {
+                room.localParticipant.videoTracks.forEach(track => {
+                    track.track.disable(true);
+                });
+            };
 
             function mediaStreamFromParticipant() {
                 const id = "#" + participants[0];
                 const parent = $(id)[0];
-                console.log('parent :: ', parent)
                 const audioTag = parent.getElementsByTagName("audio")[0];
-                console.log('audioTag :: ', audioTag)
                 const mediaStream = audioTag.captureStream();
                 return mediaStream;
             }
@@ -77,6 +101,10 @@
                 if (participantName !== "C") {
                     stopRecordForm.style.visibility = "visible";
                     startRecordForm.style.visibility = "visible";
+                    mute.style.visibility = "visible";
+                    unmute.style.visibility = "visible";
+                    enableCamera.style.visibility = "visible";
+                    disableCamera.style.visibility = "visible";
                 }
                 // fetch an Access Token from the join-room route
                 const response = await fetch("/join-room", {
@@ -208,6 +236,10 @@
                 return (hasDesktop || hasVoice) ? destination.stream.getAudioTracks() : [];
             };
 
+            mute.addEventListener("click", handleClickMute);
+            unmute.addEventListener("click", handleClickUnMute);
+            enableCamera.addEventListener("click", handleClickEnableCamera);
+            disableCamera.addEventListener("click", handleClickDisableCamera);
             startRecordForm.addEventListener("submit", handleClickStartRecord);
             stopRecordForm.addEventListener("submit", handleClickStopRecord);
             form.addEventListener("submit", startRoom);
@@ -241,6 +273,11 @@
 <form id="start-form" style="visibility: hidden">
     <button type="submit">start record</button>
 </form>
+<button id="mute" name="mute" style="visibility: hidden" >mute my mic</button>
+<button id="unmute" name="unmute" style="visibility: hidden" >unmute my mic</button>
+
+<button id="enable-camera" name="mute" style="visibility: hidden" >enable my camera</button>
+<button id="disable-camera" name="unmute" style="visibility: hidden" >disable my camera</button>
 <div id="video-container"></div>
 </body>
 </html>
