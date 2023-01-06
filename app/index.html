@@ -21,15 +21,21 @@
             const unmute = document.getElementById("unmute");
             const enableCamera = document.getElementById("enable-camera");
             const disableCamera = document.getElementById("disable-camera");
+            const reconnect = document.getElementById("reconnect");
+
+            const handleClickReconnect = async () => {
+                let mediaStream = mediaStreamFromParticipant();
+                mergeAudioStreams(desktopStream, voiceStream, mediaStream);
+            };
 
             const handleClickUnMute = () => {
                 room.localParticipant.audioTracks.forEach(track => {
-                    track.track.enabled();
+                    track.track.enable(true);console.log("#36", rec)
                 });
             };
             const handleClickMute = () => {
                 room.localParticipant.audioTracks.forEach(track => {
-                    track.track.disable();
+                    track.track.disable(false);                console.log("#41", rec)
                 });
             };
 
@@ -45,7 +51,7 @@
             };
 
             function mediaStreamFromParticipant() {
-                const id = "#" + participants[0];
+                const id = "#" + currentParticipant;
                 const parent = $(id)[0];
                 const audioTag = parent.getElementsByTagName("audio")[0];
                 const mediaStream = audioTag.captureStream();
@@ -58,10 +64,6 @@
                     desktopStream = await navigator.mediaDevices.getDisplayMedia({ video:true, audio: true });
                     voiceStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true});
                 }
-                participants.pop();
-                room.participants.forEach(participant => {
-                    participants.push(participant.identity);
-                });
 
                 let mediaStream = mediaStreamFromParticipant();
 
@@ -71,20 +73,6 @@
                 ]);
 
                 rec = new MediaRecorder(stream, {mimeType: 'video/webm; codecs=vp8,opus'});
-                blobs = [];
-                rec.ondataavailable = (e) => blobs.push(e.data);
-                rec.onstop = async () => {
-                    blob = new Blob(blobs, {type: 'video/webm'});
-                    let filename = window.prompt('Enter file name'),
-                    downloadLink = document.createElement('a');
-                    downloadLink.href = URL.createObjectURL(blob);
-                    downloadLink.download = `${filename}.webm`;
-
-                    document.body.appendChild(downloadLink);
-                    downloadLink.click();
-                    URL.revokeObjectURL(blob); // clear from memory
-                    document.body.removeChild(downloadLink);
-                };
                 rec.start();
             }
 
@@ -105,6 +93,7 @@
                     unmute.style.visibility = "visible";
                     enableCamera.style.visibility = "visible";
                     disableCamera.style.visibility = "visible";
+                    reconnect.style.visibility = "visible";
                 }
                 // fetch an Access Token from the join-room route
                 const response = await fetch("/join-room", {
@@ -140,6 +129,24 @@
             const handleClickStopRecord = (event) => {
                 event.preventDefault();
                 room.disconnect();
+                console.log("#135", rec)
+                rec.ondataavailable = (e) => {
+                    console.log('ondataavailable')
+                    blobs.push(e.data);
+                };
+                rec.onstop = async () => {
+                    let blob = new Blob(blobs, {type: 'video/webm'});
+                    let filename = window.prompt('Enter file name'),
+                        downloadLink = document.createElement('a');
+                    downloadLink.href = URL.createObjectURL(blob);
+                    downloadLink.download = `${filename}.webm`;
+
+                    document.body.appendChild(downloadLink);
+                    downloadLink.click();
+                    URL.revokeObjectURL(blob); // clear from memory
+                    document.body.removeChild(downloadLink);
+                };
+                console.log("#152", rec)
                 stream.getTracks().forEach(s=>s.stop());
                 rec.stop();
                 handleDisconnectedParticipant(room.localParticipant);
@@ -179,6 +186,10 @@
 
             const handleTrackPublication = (trackPublication, participant) => {
                 function displayTrack(track) {
+                    room.participants.forEach(participant => {
+                        currentParticipant = participant.identity;
+                    });
+
                     // append this track to the participant's div and render it on the page
                     const participantDiv = document.getElementById(participant.identity);
                     // track.attach creates an HTMLVideoElement or HTMLAudioElement
@@ -207,8 +218,12 @@
             };
 
             const mergeAudioStreams = (desktopStream, voiceStream, participantStream) => {
-                const context = new AudioContext();
-                const destination = context.createMediaStreamDestination();
+                if (context == null) {
+                    context = new AudioContext()
+                }
+                if (destination == null) {
+                    destination = context.createMediaStreamDestination();
+                }
                 let hasDesktop = false;
                 let hasVoice = false;
                 if (desktopStream && desktopStream.getAudioTracks().length > 0) {
@@ -238,6 +253,7 @@
                 return (hasDesktop || hasVoice) ? destination.stream.getAudioTracks() : [];
             };
 
+            reconnect.addEventListener("click", handleClickReconnect);
             mute.addEventListener("click", handleClickMute);
             unmute.addEventListener("click", handleClickUnMute);
             enableCamera.addEventListener("click", handleClickEnableCamera);
@@ -250,11 +266,13 @@
         let desktopStream;
         let stream;
         let rec;
-        let blobs;
-        let blob;
+        let blobs = [];;
         let room;
-        let participants = new Array();
+        let currentParticipant;
         const INITIAL = true;
+        const RECONNECT = false;
+        let context ;
+        let destination ;
         console.log('define')
     </script>
 
@@ -280,6 +298,7 @@
 
 <button id="enable-camera" name="mute" style="visibility: hidden" >enable my camera</button>
 <button id="disable-camera" name="unmute" style="visibility: hidden" >disable my camera</button>
+<button id="reconnect" name="unmute" style="visibility: hidden" >reconnect</button>
 <div id="video-container"></div>
 </body>
 </html>
