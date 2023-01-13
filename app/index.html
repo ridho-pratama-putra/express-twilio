@@ -58,12 +58,14 @@
                 return mediaStream;
             }
 
-            const initializeAndRecordCamera = async (isInitial) => {
-                console.log('isInitial :: ', isInitial)
-                if (isInitial) {
-                    desktopStream = await navigator.mediaDevices.getDisplayMedia({ video:true, audio: true });
-                    voiceStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true});
-                }
+            const initializeAndRecordCamera = async () => {
+                desktopStream = await navigator.mediaDevices.getDisplayMedia({ video: {
+                        frameRate: {
+                            ideal: 10,
+                            max: 10
+                        }
+                    }, audio: true });
+                voiceStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true});
 
                 let mediaStream = mediaStreamFromParticipant();
 
@@ -72,7 +74,7 @@
                     ...mergeAudioStreams(desktopStream, voiceStream, mediaStream),
                 ]);
 
-                rec = new MediaRecorder(stream, {mimeType: 'video/webm; codecs=vp8,opus'});
+                rec = new MediaRecorder(stream, {mimeType: 'video/webm; codecs=h264,opus'});
                 rec.start();
             }
 
@@ -122,7 +124,7 @@
 
             const handleClickStartRecord = (event) => {
                 event.preventDefault();
-                initializeAndRecordCamera(INITIAL);
+                initializeAndRecordCamera();
             }
 
             const handleClickStopRecord = (event) => {
