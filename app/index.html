@@ -22,6 +22,58 @@
             const enableCamera = document.getElementById("enable-camera");
             const disableCamera = document.getElementById("disable-camera");
             const reconnect = document.getElementById("reconnect");
+            const pauseRecording = document.getElementById("pause-recording");
+            const resumeRecording = document.getElementById("resume-recording");
+            const capture = document.getElementById("capture");
+            const startRecordingSound = document.getElementById("sound-recording-start");
+            const stopRecordingSound = document.getElementById("sound-recording-stop");
+
+            const handleClickResumeRecord = async () => {
+                await rec.resume();
+            };
+            const handleClickPauseRecord = async () => {
+                await rec.pause();
+            };
+
+            const handleClickCapture = async () => {
+                let video = document.querySelector("video");
+            };
+
+            const handleClickStartSoundRecord = async () => {
+                let mediaStream = mediaStreamFromParticipant();
+                voiceStream = await navigator.mediaDevices.getUserMedia({video: false, audio: true});
+
+                stream = new MediaStream([
+                    ...mergeAudioStreams(null, voiceStream, mediaStream),
+                ]);
+
+                rec = new MediaRecorder(stream, {mimeType: 'audio/webm;codecs=opus'});
+                rec.start();
+            };
+
+            const handleClickStopSoundRecord = (event) => {
+                event.preventDefault();
+                room.disconnect();
+                rec.ondataavailable = (e) => {
+                    console.log('ondataavailable')
+                    blobs.push(e.data);
+                };
+                rec.onstop = async () => {
+                    let blob = new Blob(blobs, {type: 'audio/webm;codecs=opus'});
+                    let filename = window.prompt('Enter audio file name'),
+                        downloadLink = document.createElement('a');
+                    downloadLink.href = URL.createObjectURL(blob);
+                    downloadLink.download = `${filename}.mp3`;
+
+                    document.body.appendChild(downloadLink);
+                    downloadLink.click();
+                    URL.revokeObjectURL(blob); // clear from memory
+                    document.body.removeChild(downloadLink);
+                };
+                stream.getTracks().forEach(s => s.stop());
+                rec.stop();
+                handleDisconnectedParticipant(room.localParticipant);
+            };
 
             const handleClickReconnect = async () => {
                 let mediaStream = mediaStreamFromParticipant();
@@ -30,12 +82,14 @@
 
             const handleClickUnMute = () => {
                 room.localParticipant.audioTracks.forEach(track => {
-                    track.track.enable(true);console.log("#36", rec)
+                    track.track.enable(true);
+                    console.log("#36", rec)
                 });
             };
             const handleClickMute = () => {
                 room.localParticipant.audioTracks.forEach(track => {
-                    track.track.disable(false);                console.log("#41", rec)
+                    track.track.disable(false);
+                    console.log("#41", rec)
                 });
             };
 
@@ -54,18 +108,19 @@
                 const id = "#" + currentParticipant;
                 const parent = $(id)[0];
                 const audioTag = parent.getElementsByTagName("audio")[0];
-                const mediaStream = audioTag.captureStream();
-                return mediaStream;
+                return audioTag.captureStream();
             }
 
             const initializeAndRecordCamera = async () => {
-                desktopStream = await navigator.mediaDevices.getDisplayMedia({ video: {
+                desktopStream = await navigator.mediaDevices.getDisplayMedia({
+                    video: {
                         frameRate: {
                             ideal: 10,
                             max: 10
                         }
-                    }, audio: true });
-                voiceStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true});
+                    }, audio: true
+                });
+                voiceStream = await navigator.mediaDevices.getUserMedia({video: false, audio: true});
 
                 let mediaStream = mediaStreamFromParticipant();
 
@@ -95,6 +150,11 @@
                     unmute.style.visibility = "visible";
                     enableCamera.style.visibility = "visible";
                     disableCamera.style.visibility = "visible";
+                    pauseRecording.style.visibility = "visible";
+                    resumeRecording.style.visibility = "visible";
+                    capture.style.visibility = "visible";
+                    startRecordingSound.style.visibility = "visible";
+                    stopRecordingSound.style.visibility = "visible";
                 }
                 // fetch an Access Token from the join-room route
                 const response = await fetch("/join-room", {
@@ -148,7 +208,7 @@
                     document.body.removeChild(downloadLink);
                 };
                 console.log("#152", rec)
-                stream.getTracks().forEach(s=>s.stop());
+                stream.getTracks().forEach(s => s.stop());
                 rec.stop();
                 handleDisconnectedParticipant(room.localParticipant);
             }
@@ -216,6 +276,8 @@
             const handleDisconnectedParticipant = (participant) => {
                 // stop listening for this participant
                 participant.removeAllListeners();
+                console.log("some one disconnected ", participant.sid)
+                alert("some one disconnected ", participant.sid)
                 reconnect.style.visibility = "hidden";
                 // remove this participant's div from the page
                 const participantDiv = document.getElementById(participant.identity);
@@ -265,30 +327,35 @@
             disableCamera.addEventListener("click", handleClickDisableCamera);
             startRecordForm.addEventListener("submit", handleClickStartRecord);
             stopRecordForm.addEventListener("submit", handleClickStopRecord);
+            pauseRecording.addEventListener("click", handleClickPauseRecord);
+            resumeRecording.addEventListener("click", handleClickResumeRecord);
+            capture.addEventListener("click", handleClickCapture);
+            startRecordingSound.addEventListener("click", handleClickStartSoundRecord);
+            stopRecordingSound.addEventListener("click", handleClickStopSoundRecord);
             form.addEventListener("submit", startRoom);
         });
         let voiceStream;
         let desktopStream;
         let stream;
         let rec;
-        let blobs = [];;
+        let blobs = [];
         let room;
         let currentParticipant;
         const INITIAL = true;
         const RECONNECT = false;
-        let context ;
-        let destination ;
-        console.log('define')
+        let context;
+        let destination;
     </script>
 
 </head>
 <body>
 <form id="room-name-form">
     <p>
-        Enter a Room Name to join: <input name="room_name" id="room-name-input" value="hitam"/>
+        <label for="room-name-input">Enter a Room Name to join: </label>
+        <input name="room_name" id="room-name-input" value="hitam"/>
     </p>
     <p>
-        your name: <input name="participant_name" id="participant-name-input" value="C"/>
+        <label for="participant-name-input">your name: </label><input name="participant_name" id="participant-name-input" value="C"/>
     </p>
     <button type="submit">Join Room</button>
 </form>
@@ -298,12 +365,20 @@
 <form id="start-form" style="visibility: hidden">
     <button type="submit">start record</button>
 </form>
-<button id="mute" name="mute" style="visibility: hidden" >mute my mic</button>
-<button id="unmute" name="unmute" style="visibility: hidden" >unmute my mic</button>
+<button id="mute" name="mute" style="visibility: hidden">mute my mic</button>
+<button id="unmute" name="unmute" style="visibility: hidden">unmute my mic</button>
 
-<button id="enable-camera" name="mute" style="visibility: hidden" >enable my camera</button>
-<button id="disable-camera" name="unmute" style="visibility: hidden" >disable my camera</button>
-<button id="reconnect" name="unmute" style="visibility: hidden" >reconnect</button>
+<button id="enable-camera" name="mute" style="visibility: hidden">enable my camera</button>
+<button id="disable-camera" name="unmute" style="visibility: hidden">disable my camera</button>
+<button id="reconnect" name="unmute" style="visibility: hidden">reconnect</button>
+<button id="capture" name="capture" style="visibility: hidden">capture</button>
+<button id="pause-recording" name="pauseRecording" style="visibility: hidden">pause recording</button>
+<button id="resume-recording" name="pauseRecording" style="visibility: hidden">resume recording</button>
+<button id="sound-recording-start" name="startSoundRecording" style="visibility: hidden">sound recording start</button>
+<button id="sound-recording-stop" name="stopSoundRecording" style="visibility: hidden">sound recording stop</button>
+<form>
+    <input type="file" name="lkl">
+</form>
 <div id="video-container"></div>
 </body>
 </html>
